@@ -12,6 +12,7 @@ from rest_framework.renderers import BaseRenderer
 from rest_framework.serializers import Serializer
 from rest_framework.utils.serializer_helpers import ReturnDict, ReturnList
 
+ESCAPE_CHARS = ('=', '-', '+', '@', '\t', '\r', '\n',)
 
 def get_style_from_dict(style_dict, style_name):
     """
@@ -80,6 +81,7 @@ class XLSXRenderer(BaseRenderer):
     boolean_labels = None
     date_format_mappings = None
     custom_mappings = None
+    sanitize_fields = True  # prepend possibly malicious values with "'"
 
     def render(self, data, accepted_media_type=None, renderer_context=None):
         """
@@ -299,6 +301,14 @@ class XLSXRenderer(BaseRenderer):
                 _append_item(new_key, v)
         return dict(items)
 
+    def _sanitize_value(self, raw_value):
+        # prepend ' if raw_value is starting with possible malicious char
+        if self.sanitize_fields and raw_value:
+            str_value = str(raw_value)
+            if str_value.startswith(ESCAPE_CHARS):
+                return "'" + raw_value
+        return raw_value
+          
     def _make_body(self, row, row_count):
         column_count = 0
         row_count += 1
@@ -307,8 +317,9 @@ class XLSXRenderer(BaseRenderer):
             if header_key == "row_color":
                 continue
             column_count += 1
+            sanitized_value = self._sanitize_value(flattened_row.get(header_key))
             cell = self.ws.cell(
-                row=row_count, column=column_count, value=flattened_row.get(header_key)
+                row=row_count, column=column_count, value=sanitized_value
             )
             cell.style = self.body_style
         self.ws.row_dimensions[row_count].height = self.body.get("height", 40)
